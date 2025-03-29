@@ -1,118 +1,150 @@
 const express = require('express');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
+const { Sequelize, DataTypes } = require('sequelize');
+
 const app = express();
 const port = 3000;
-const { Sequelize, DataTypes } = require('sequelize');
-const jwt = require("jsonwebtoken");
 
 const sequelize = new Sequelize({
     dialect: 'sqlite',
     storage: 'database.sqlite'
 });
 
+// 세션 설정
+app.use(session({
+    secret: 'secret-key', // 실제 환경에서는 강력한 키 사용
+    resave: false,
+    saveUninitialized: false
+}));
+
+app.use(express.urlencoded({ extended: true }));
+app.set('view engine', 'ejs');
+
+// 사용자 모델
+const User = sequelize.define('User', {
+    username: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true
+    },
+    password: {
+        type: DataTypes.STRING,
+        allowNull: false
+    }
+});
+
+// 댓글 모델
 const Comments = sequelize.define('Comments', {
     content: {
         type: DataTypes.STRING,
         allowNull: false
     },
-    username: { 
+    username: {
         type: DataTypes.STRING,
         allowNull: false
     },
-    userId: { 
-        type: DataTypes.STRING,
+    userId: {
+        type: DataTypes.INTEGER,
         allowNull: false
     }
 });
 
+// 데이터베이스 동기화
 (async () => {
-    await Comments.sync({ force: true });
-    console.log("The table for the User model was just (re)created!");
+    await sequelize.sync({ force: true });
+    console.log("DB 초기화 완료!");
 })();
 
-let comments = [];
-
-app.use(express.urlencoded({extended: true}));
-app.set('view engine', 'ejs');
+// 홈 페이지
 app.get('/', async (req, res) => {
     const comments = await Comments.findAll();
-
-   
-    const loggedInUserId = "exampleUserId";  
-    res.render('index', { comments: comments, loggedInUserId: loggedInUserId });
+    res.render('index', { comments, user: req.session.user });
 });
 
+// 회원가입 페이지
+app.get('/register', (req, res) => {
+    res.render('register');
+});
+
+// 회원가입 처리
+app.post('/register', async (req, res) => {
+    const { username, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await User.create({ username, password: hashedPassword });
+    res.redirect('/login');
+});
+
+// 로그인 페이지
+app.get('/login', (req, res) => {
+    res.render('login');
+});
+
+// 로그인 처리
+app.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    const user = await User.findOne({ where: { username } });
+
+    if (user && await bcrypt.compare(password, user.password)) {
+        req.session.user = { id: user.id, username: user.username };
+        res.redirect('/');
+    } else {
+        res.send("로그인 실패! 아이디 또는 비밀번호가 틀립니다.");
+    }
+});
+
+// 로그아웃
+app.get('/logout', (req, res) => {
+    req.session.destroy(() => {
+        res.redirect('/');
+    });
+});
+
+// 댓글 작성
 app.post('/create', async (req, res) => {
-    console.log(req.body);
+    if (!req.session.user) return res.status(401).send("로그인이 필요합니다.");
+    
     const { content } = req.body;
+    await Comments.create({
+        content,
+        username: req.session.user.username,
+        userId: req.session.user.id
+    });
 
-    // `username`을 하드코딩
-    const username = "exampleUser";  // 로그인 기능을 추가하면 이 값을 동적으로 설정
-
-    const loggedInUserId = "exampleUserId";  // 테스트용 사용자 ID
-
-    try {
-        const comment = await Comments.create({
-            content: content,
-            username: username,  // `username` 값을 함께 저장
-            userId: loggedInUserId
-        });
-        console.log(comment.id);
-        res.redirect('/');
-    } catch (error) {
-        console.error("에러 발생:", error);
-        res.status(500).send("서버에서 오류가 발생했습니다.");
-    }
+    res.redirect('/');
 });
+
+// 댓글 수정
 app.post('/update/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { content } = req.body;
-        const currentUser = "exampleUser";  // 현재 로그인한 사용자 (테스트용 하드코딩)
+    if (!req.session.user) return res.status(401).send("로그인이 필요합니다.");
 
-        // DB에서 댓글 조회
-        const comment = await Comments.findOne({ where: { id: id } });
+    const { id } = req.params;
+    const { content } = req.body;
+    const comment = await Comments.findOne({ where: { id } });
 
-        if (!comment) {
-            return res.status(404).send("댓글을 찾을 수 없습니다.");
-        }
-
-        // 작성자만 수정할 수 있도록 검증
-        if (comment.username !== currentUser) {
-            return res.status(403).send("수정 권한이 없습니다.");
-        }
-
-        await Comments.update({ content: content }, { where: { id: id } });
-        res.redirect('/');
-    } catch (error) {
-        console.error("에러 발생:", error);
-        res.status(500).send("서버에서 오류가 발생했습니다.");
+    if (!comment || comment.userId !== req.session.user.id) {
+        return res.status(403).send("수정 권한이 없습니다.");
     }
+
+    await Comments.update({ content }, { where: { id } });
+    res.redirect('/');
 });
 
+// 댓글 삭제
 app.post('/delete/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const currentUser = "exampleUser";  // 현재 로그인한 사용자 (테스트용 하드코딩)
+    if (!req.session.user) return res.status(401).send("로그인이 필요합니다.");
 
-        // DB에서 댓글 조회
-        const comment = await Comments.findOne({ where: { id: id } });
+    const { id } = req.params;
+    const comment = await Comments.findOne({ where: { id } });
 
-        if (!comment) {
-            return res.status(404).send("댓글을 찾을 수 없습니다.");
-        }
-
-        // 작성자만 삭제할 수 있도록 검증
-        if (comment.username !== currentUser) {
-            return res.status(403).send("삭제 권한이 없습니다.");
-        }
-
-        await Comments.destroy({ where: { id: id } });
-        res.redirect('/');
-    } catch (error) {
-        console.error("에러 발생:", error);
-        res.status(500).send("서버에서 오류가 발생했습니다.");
+    if (!comment || comment.userId !== req.session.user.id) {
+        return res.status(403).send("삭제 권한이 없습니다.");
     }
+
+    await Comments.destroy({ where: { id } });
+    res.redirect('/');
 });
+
 app.listen(port, () => {
-    console.log(`Example app listening on port $port}`);
+    console.log(`Server running on port ${port}`);
 });

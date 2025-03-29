@@ -1,36 +1,45 @@
-
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>내 페이지</title>
+    <title>게시판</title>
 </head>
-
 <body>
-    <h1>댓글 목록</h1>
+    <h1>게시판</h1>
+
+    <% if (user) { %>
+        <p>안녕하세요, <strong><%= user.username %></strong>님!</p>
+        <a href="/logout">로그아웃</a>
+    <% } else { %>
+        <a href="/login">로그인</a> | <a href="/register">회원가입</a>
+    <% } %>
+
+    <h2>댓글 목록</h2>
     <ul>
         <% for (comment of comments) { %>
-            <li id="comments-{{id}}">
-                <%= comment.id %>
-                    <%= comment.content %>
+            <li>
+                <strong><%= comment.username %></strong>: <%= comment.content %>
+                <% if (user && user.username === comment.username) { %>
+                    <form action="/update/<%= comment.id %>" method="post">
+                        <input type="text" name="content">
+                        <input type="submit" value="수정">
+                    </form>
+                    <form action="/delete/<%= comment.id %>" method="post">
+                        <input type="submit" value="삭제">
+                    </form>
+                <% } %>
             </li>
-            <form action="/update/<%= comment.id %>" method="post">
-                <input type="text" name="content">
-                <input type="submit" value="수정하기">
-            </form>
-            <form action="/delete/<%= comment.id %>" method="post">
-                <input type="submit" value="삭제하기">
-            </form>
-            <% } %>
+        <% } %>
     </ul>
-    <h2>댓글 작성</h2>
-    <form action="/create" method="post">
-        <input type="text" name="content" placeholder="댓글을 입력하세요">
-      
-        <input type="submit" value="작성하기">
-    </form>
-</body>
 
+    <% if (user) { %>
+        <h2>댓글 작성</h2>
+        <form action="/create" method="post">
+            <input type="text" name="content" placeholder="댓글을 입력하세요">
+            <input type="submit" value="작성">
+        </form>
+    <% } else { %>
+        <p>댓글을 작성하려면 <a href="/login">로그인</a>하세요.</p>
+    <% } %>
+</body>
 </html>
