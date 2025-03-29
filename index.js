@@ -52,7 +52,7 @@ const Comments = sequelize.define('Comments', {
 
 // 데이터베이스 동기화
 (async () => {
-    await sequelize.sync({ force: true });
+    await sequelize.sync({ alter: true });
     console.log("DB 초기화 완료!");
 })();
 
@@ -102,13 +102,16 @@ app.get('/logout', (req, res) => {
 
 // 댓글 작성
 app.post('/create', async (req, res) => {
-    if (!req.session.user) return res.status(401).send("로그인이 필요합니다.");
-    
-    const { content } = req.body;
-    await Comments.create({
-        content,
-        username: req.session.user.username,
-        userId: req.session.user.id
+    const { content, username, userId } = req.body; // 클라이언트에서 사용자 정보도 보내도록 수정
+
+    if (!username || !userId) {
+        return res.status(400).send("로그인이 필요합니다.");
+    }
+
+    await Comments.create({ 
+        content: content, 
+        username: username, 
+        userId: userId 
     });
 
     res.redirect('/');
