@@ -102,21 +102,16 @@ app.get('/logout', (req, res) => {
 
 // 댓글 작성
 app.post('/create', async (req, res) => {
-    const { content, username, userId } = req.body; // 클라이언트에서 사용자 정보도 보내도록 수정
+    if (!req.session.user) return res.status(401).send("로그인이 필요합니다.");
 
-    if (!username || !userId) {
-        return res.status(400).send("로그인이 필요합니다.");
-    }
-
-    await Comments.create({ 
-        content: content, 
-        username: username, 
-        userId: userId 
+    await Comments.create({
+        content: req.body.content,   // ✅ 사용자가 입력한 댓글 내용만 가져옴
+        username: req.session.user.username,  // ✅ 세션에서 가져온 유저 이름
+        userId: req.session.user.id  // ✅ 세션에서 가져온 유저 ID
     });
 
     res.redirect('/');
 });
-
 // 댓글 수정
 app.post('/update/:id', async (req, res) => {
     if (!req.session.user) return res.status(401).send("로그인이 필요합니다.");
